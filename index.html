@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loop AI (Gemini Edition)</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100vh; background-color: #eef2f5; margin: 0;
+        }
+        h1 { color: #333; margin-bottom: 30px; }
+        .mic-container { position: relative; }
+        .mic-btn {
+            width: 120px; height: 120px; border-radius: 50%; border: none; cursor: pointer;
+            background: linear-gradient(145deg, #007bff, #0056b3);
+            color: white; font-size: 50px;
+            box-shadow: 0 8px 15px rgba(0,0,0,0.2);
+            transition: all 0.3s ease; display: flex; align-items: center; justify-content: center;
+        }
+        .mic-btn:active { transform: scale(0.95); }
+        .mic-btn.recording { background: #ff4757; animation: pulse 1.5s infinite; }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(255, 71, 87, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0); }
+        }
+        .status { margin-top: 25px; font-size: 20px; color: #666; font-weight: 500; height: 30px;}
+        .instructions { margin-top: 40px; font-size: 14px; color: #999; max-width: 400px; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <h1>Loop AI Hospital Assistant</h1>
+    
+    <div class="mic-container">
+        <button id="micBtn" class="mic-btn">🎙️</button>
+    </div>
+    
+    <div id="status" class="status">Press & Hold to Speak</div>
+
+    <div class="instructions">
+        Try asking:<br>
+        "Tell me 3 hospitals in Bangalore"<br>
+        "Is Manipal Sarjapur in my network?"
+    </div>
+
+    <script>
+        const micBtn = document.getElementById('micBtn');
+        const status = document.getElementById('status');
+        let mediaRecorder;
+        let audioChunks = [];
+
+        micBtn.addEventListener('mousedown', startRecording);
+        micBtn.addEventListener('mouseup', stopRecording);
+        micBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+        micBtn.addEventListener('touchend', (e) => { e.preventDefault(); stopRecording(); });
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    sendToBackend(audioBlob);
+                };
+
+                mediaRecorder.start();
+                micBtn.classList.add('recording');
+                status.textContent = "Listening...";
+            } catch (err) {
+                console.error("Mic Error:", err);
+                status.textContent = "Error: Access Denied";
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                micBtn.classList.remove('recording');
+                status.textContent = "Thinking...";
+            }
+        }
+
+        async function sendToBackend(audioBlob) {
+            const formData = new FormData();
+            formData.append("file", audioBlob, "recording.wav");
+
+            try {
+                // Send to local Python backend
+                const response = await fetch("http://localhost:8000/chat-audio", {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error("Server Error");
+
+                // Get audio response
+                const responseBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(responseBlob);
+                const audio = new Audio(audioUrl);
+                
+                status.textContent = "Loop AI Speaking...";
+                audio.play();
+                
+                audio.onended = () => {
+                    status.textContent = "Press & Hold to Speak";
+                };
+
+            } catch (error) {
+                console.error(error);
+                status.textContent = "Connection Failed. Is backend running?";
+            }
+        }
+    </script>
+</body>
+</html>
